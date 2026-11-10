@@ -13,14 +13,11 @@ const authMiddleware = (req, res, next) => {
         }
 
         const token = authHeader.split(" ")[1];
+        const secret = process.env.JWT_SECRET || "myStudyPlanner_Secret_2026_ChangeThisToARandomLongSecret";
 
-        const decoded = jwt.verify(
-            token,
-            process.env.JWT_SECRET
-        );
+        const decoded = jwt.verify(token, secret);
 
         req.user = decoded;
-
         next();
 
     } catch (error) {

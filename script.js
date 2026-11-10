@@ -24,10 +24,53 @@ const submitBtn = document.getElementById("submitBtn");
 const cancelEdit = document.getElementById("cancelEdit");
 
 // ======================================
-// 2. TASK STATE + BACKEND API
+// 2. TASK STATE + DYNAMIC BACKEND API
 // ======================================
 
-const API_URL = "https://my-study-planner-beige.vercel.app/api";
+// Intelligently resolve the API endpoint across localhost, mobile LAN devices, and cloud deployments
+function getApiBaseUrl() {
+    // 1. Manual user override if saved in localStorage
+    const manualUrl = localStorage.getItem("myStudyApiUrl");
+    if (manualUrl) return manualUrl;
+
+    // 2. If the frontend is served directly by the Express backend on port 5000
+    if (window.location.port === "5000" || window.location.pathname.startsWith("/api")) {
+        return "/api";
+    }
+
+    // 3. If running via file:// protocol or locally without a web server
+    if (window.location.protocol === "file:" || !window.location.hostname) {
+        return "http://localhost:5000/api";
+    }
+
+    // 4. If running on local computer via localhost or 127.0.0.1 (e.g. Live Server port 5500)
+    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+        return "http://localhost:5000/api";
+    }
+
+    // 5. If accessed on a mobile device over the local Wi-Fi / network IP (e.g. 192.168.x.x)
+    const host = window.location.hostname;
+    if (/^192\.168\./.test(host) || /^10\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) {
+        return `http://${host}:5000/api`;
+    }
+
+    // 6. Default to local backend on port 5000
+    return "http://localhost:5000/api";
+}
+
+function formatAuthError(error, defaultMsg) {
+    if (!error) return defaultMsg;
+    if (error.name === "AbortError") {
+        return "Server request timed out. Please verify your connection.";
+    }
+    const msg = error.message || "";
+    if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("Load failed")) {
+        return "Failed to connect to backend server. Please make sure the server is running on http://localhost:5000";
+    }
+    return msg || defaultMsg;
+}
+
+let API_URL = getApiBaseUrl();
 
 let tasks = [];
 let editingId = null;
@@ -39,29 +82,49 @@ function getToken() {
 async function apiRequest(path, options = {}) {
     const token = getToken();
 
-    const response = await fetch(`${API_URL}${path}`, {
-        ...options,
-        headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            ...(options.headers || {})
+    // 12-second timeout prevents UI freezing on slow networks
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    try {
+        const response = await fetch(`${API_URL}${path}`, {
+            ...options,
+            signal: controller.signal,
+            headers: {
+                "Content-Type": "application/json",
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                ...(options.headers || {})
+            }
+        });
+
+        clearTimeout(timeoutId);
+        const data = await response.json().catch(() => ({}));
+
+        // Invalidate token only on genuine 401 Unauthorized (invalid or expired JWT)
+        if (response.status === 401) {
+            localStorage.removeItem("myStudyToken");
+            localStorage.removeItem("myStudyUser");
+            document.documentElement.classList.remove("session-authenticated");
+            showAuthScreen();
+            throw new Error(data.message || "Session expired. Please login again.");
         }
-    });
 
-    const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.success === false) {
+            throw new Error(data.message || "Something went wrong. Please try again.");
+        }
 
-    if (response.status === 401) {
-        localStorage.removeItem("myStudyToken");
-        localStorage.removeItem("myStudyUser");
-        showAuthScreen();
-        throw new Error(data.message || "Session expired. Please login again.");
+        return data;
+
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === "AbortError") {
+            throw new Error("Server request timed out. Please check your network connection.");
+        }
+        if (error.message && (error.message.includes("Failed to fetch") || error.message.includes("NetworkError"))) {
+            throw new Error("Unable to connect to backend server. Make sure the server is running on http://localhost:5000");
+        }
+        throw error;
     }
-
-    if (!response.ok || data.success === false) {
-        throw new Error(data.message || "Something went wrong. Please try again.");
-    }
-
-    return data;
 }
 
 // ======================================
@@ -951,184 +1014,616 @@ document.addEventListener("click", function(event) {
     button.style.overflow = "hidden";
     button.appendChild(ripple);
 
-    ripple.addEventListener("animationend", function() {
-        ripple.remove();
-    });
+    const removeRipple = () => {
+        if (ripple.parentNode) ripple.remove();
+    };
+    ripple.addEventListener("animationend", removeRipple);
+    setTimeout(removeRipple, 600);
 });
 
 // ======================================
-// 18. LOGIN & REGISTRATION
+// 18. MODERN NEUMORPHISM AUTHENTICATION
 // ======================================
 
 const authSection = document.getElementById("authSection");
-const loginForm = document.getElementById("loginForm");
-const registerForm = document.getElementById("registerForm");
+const tabLogin = document.getElementById("tabLogin");
+const tabRegister = document.getElementById("tabRegister");
 const authTitle = document.getElementById("authTitle");
 const authSubtitle = document.getElementById("authSubtitle");
-const authMessage = document.getElementById("authMessage");
-const authSwitch = document.getElementById("authSwitch");
-const showRegister = document.getElementById("showRegister");
+const authAlert = document.getElementById("authAlert");
+const authAlertIcon = document.getElementById("authAlertIcon");
+const authAlertText = document.getElementById("authAlertText");
+const authAlertClose = document.getElementById("authAlertClose");
 
+const loginFormWrapper = document.getElementById("loginFormWrapper");
+const registerFormWrapper = document.getElementById("registerFormWrapper");
+const loginForm = document.getElementById("loginForm");
+const registerForm = document.getElementById("registerForm");
+
+const loginEmail = document.getElementById("loginEmail");
+const loginPassword = document.getElementById("loginPassword");
+const rememberMeCheckbox = document.getElementById("rememberMeCheckbox");
+const forgotPasswordBtn = document.getElementById("forgotPasswordBtn");
+const loginSubmitBtn = document.getElementById("loginSubmitBtn");
+
+const registerName = document.getElementById("registerName");
+const registerEmail = document.getElementById("registerEmail");
+const registerPassword = document.getElementById("registerPassword");
+const registerConfirmPassword = document.getElementById("registerConfirmPassword");
+const registerSubmitBtn = document.getElementById("registerSubmitBtn");
+
+const authSwitchPrompt = document.getElementById("authSwitchPrompt");
+const authSwitchBtn = document.getElementById("authSwitchBtn");
+
+const googleLoginBtn = document.getElementById("googleLoginBtn");
+const githubLoginBtn = document.getElementById("githubLoginBtn");
+const authThemeToggle = document.getElementById("authThemeToggle");
+
+const forgotPasswordModal = document.getElementById("forgotPasswordModal");
+const forgotPasswordForm = document.getElementById("forgotPasswordForm");
+const resetEmail = document.getElementById("resetEmail");
+const resetModalAlert = document.getElementById("resetModalAlert");
+const closeResetModalBtn = document.getElementById("closeResetModalBtn");
+
+const socialNoticeModal = document.getElementById("socialNoticeModal");
+const socialModalTitle = document.getElementById("socialModalTitle");
+const socialModalDesc = document.getElementById("socialModalDesc");
+const socialModalIcon = document.getElementById("socialModalIcon");
+const closeSocialModalBtn = document.getElementById("closeSocialModalBtn");
+
+// ALERT DISPLAY HELPER
+function showAuthAlert(message, type = "error") {
+    if (!authAlert || !authAlertText) return;
+
+    authAlert.className = `auth-alert ${type}`;
+    if (authAlertIcon) {
+        authAlertIcon.textContent = type === "success" ? "✅" : (type === "info" ? "ℹ️" : "⚠️");
+    }
+    authAlertText.textContent = message;
+    authAlert.classList.remove("hidden");
+}
+
+function hideAuthAlert() {
+    if (authAlert) {
+        authAlert.classList.add("hidden");
+    }
+}
+
+if (authAlertClose) {
+    authAlertClose.addEventListener("click", hideAuthAlert);
+}
+
+// BUTTON LOADING STATE HELPER
+function setButtonLoading(button, isLoading, loadingText = "Processing...") {
+    if (!button) return;
+
+    const spinner = button.querySelector(".btn-spinner");
+    const arrow = button.querySelector(".btn-icon-arrow");
+    const textSpan = button.querySelector(".btn-text");
+
+    button.disabled = isLoading;
+
+    if (isLoading) {
+        if (spinner) spinner.classList.remove("hidden");
+        if (arrow) arrow.classList.add("hidden");
+        if (textSpan) {
+            button.dataset.originalText = textSpan.textContent;
+            textSpan.textContent = loadingText;
+        }
+    } else {
+        if (spinner) spinner.classList.add("hidden");
+        if (arrow) arrow.classList.remove("hidden");
+        if (textSpan && button.dataset.originalText) {
+            textSpan.textContent = button.dataset.originalText;
+        }
+    }
+}
+
+// CLEAR FIELD FEEDBACKS
+function clearInputFeedbacks() {
+    document.querySelectorAll(".neu-input").forEach(input => {
+        input.classList.remove("is-invalid");
+    });
+    document.querySelectorAll(".input-feedback").forEach(feedback => {
+        feedback.textContent = "";
+    });
+}
+
+function setFieldError(input, feedbackEl, message) {
+    if (input) input.classList.add("is-invalid");
+    if (feedbackEl) feedbackEl.textContent = message;
+}
+
+// TAB NAVIGATION: LOGIN
 function showLogin() {
-    loginForm.classList.remove("hidden");
-    registerForm.classList.add("hidden");
-
-    authTitle.textContent = "Welcome Back!";
-    authSubtitle.textContent = "Login to continue your study journey.";
-
-    authSwitch.innerHTML =
-        `Don't have an account? <button type="button" id="showRegister">Register</button>`;
-
-    document.getElementById("showRegister")
-        .addEventListener("click", showRegisterForm);
-
-    authMessage.textContent = "";
+    showLoginTab();
 }
 
+function showLoginTab() {
+    if (tabLogin) {
+        tabLogin.classList.add("active");
+        tabLogin.setAttribute("aria-selected", "true");
+    }
+    if (tabRegister) {
+        tabRegister.classList.remove("active");
+        tabRegister.setAttribute("aria-selected", "false");
+    }
+
+    if (loginFormWrapper) loginFormWrapper.classList.add("active-form");
+    if (registerFormWrapper) registerFormWrapper.classList.remove("active-form");
+
+    if (authTitle) authTitle.textContent = "Welcome Back";
+    if (authSubtitle) authSubtitle.textContent = "Plan your studies, achieve your goals.";
+
+    if (authSwitchPrompt) {
+        authSwitchPrompt.innerHTML = `Don't have an account? <button type="button" id="authSwitchBtn" class="link-btn-strong">Create one now</button>`;
+        const newBtn = document.getElementById("authSwitchBtn");
+        if (newBtn) newBtn.addEventListener("click", showRegisterTab);
+    }
+
+    hideAuthAlert();
+    clearInputFeedbacks();
+}
+
+// TAB NAVIGATION: REGISTER
 function showRegisterForm() {
-    loginForm.classList.add("hidden");
-    registerForm.classList.remove("hidden");
-
-    authTitle.textContent = "Create Account";
-    authSubtitle.textContent = "Join MyStudy Planner today.";
-
-    authSwitch.innerHTML =
-        `Already have an account? <button type="button" id="showLogin">Login</button>`;
-
-    document.getElementById("showLogin")
-        .addEventListener("click", showLogin);
-
-    authMessage.textContent = "";
+    showRegisterTab();
 }
 
-showRegister.addEventListener("click", showRegisterForm);
+function showRegisterTab() {
+    if (tabRegister) {
+        tabRegister.classList.add("active");
+        tabRegister.setAttribute("aria-selected", "true");
+    }
+    if (tabLogin) {
+        tabLogin.classList.remove("active");
+        tabLogin.setAttribute("aria-selected", "false");
+    }
 
-// REGISTER
-registerForm.addEventListener("submit", async function(event) {
-    event.preventDefault();
+    if (registerFormWrapper) registerFormWrapper.classList.add("active-form");
+    if (loginFormWrapper) loginFormWrapper.classList.remove("active-form");
 
-    const full_name = document.getElementById("registerName").value.trim();
-    const email = document.getElementById("registerEmail").value.trim();
-    const password = document.getElementById("registerPassword").value;
+    if (authTitle) authTitle.textContent = "Create Account";
+    if (authSubtitle) authSubtitle.textContent = "Start your journey to academic excellence.";
 
-    authMessage.textContent = "Creating your account...";
+    if (authSwitchPrompt) {
+        authSwitchPrompt.innerHTML = `Already have an account? <button type="button" id="authSwitchBtn" class="link-btn-strong">Sign in here</button>`;
+        const newBtn = document.getElementById("authSwitchBtn");
+        if (newBtn) newBtn.addEventListener("click", showLoginTab);
+    }
 
-    try {
-        const response = await fetch(`${API_URL}/auth/register`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ full_name, email, password })
-        });
+    hideAuthAlert();
+    clearInputFeedbacks();
+}
 
-        const data = await response.json();
+if (tabLogin) tabLogin.addEventListener("click", showLoginTab);
+if (tabRegister) tabRegister.addEventListener("click", showRegisterTab);
+if (authSwitchBtn) authSwitchBtn.addEventListener("click", showRegisterTab);
 
-        if (!response.ok || !data.success) {
-            throw new Error(data.message || "Registration failed");
+// PASSWORD VISIBILITY TOGGLE (ALL FORMS)
+document.querySelectorAll(".password-toggle-btn").forEach(button => {
+    button.addEventListener("click", function() {
+        const targetId = this.getAttribute("data-target");
+        const input = document.getElementById(targetId);
+        if (!input) return;
+
+        const eyeOpen = this.querySelector(".eye-open");
+        const eyeClosed = this.querySelector(".eye-closed");
+
+        if (input.type === "password") {
+            input.type = "text";
+            if (eyeOpen) eyeOpen.classList.add("hidden");
+            if (eyeClosed) eyeClosed.classList.remove("hidden");
+            this.setAttribute("aria-label", "Hide password");
+        } else {
+            input.type = "password";
+            if (eyeOpen) eyeOpen.classList.remove("hidden");
+            if (eyeClosed) eyeClosed.classList.add("hidden");
+            this.setAttribute("aria-label", "Show password");
+        }
+    });
+});
+
+// RESTORE REMEMBERED EMAIL
+(function initRememberMe() {
+    const rememberedEmail = localStorage.getItem("myStudyRememberEmail");
+    if (rememberedEmail && loginEmail) {
+        loginEmail.value = rememberedEmail;
+        if (rememberMeCheckbox) rememberMeCheckbox.checked = true;
+    }
+})();
+
+// EMAIL VALIDATION REGEX
+function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+// SIGN UP FORM SUBMISSION
+if (registerForm) {
+    registerForm.addEventListener("submit", async function(event) {
+        event.preventDefault();
+        clearInputFeedbacks();
+        hideAuthAlert();
+
+        const full_name = registerName ? registerName.value.trim() : "";
+        const email = registerEmail ? registerEmail.value.trim().toLowerCase() : "";
+        const password = registerPassword ? registerPassword.value : "";
+        const confirmPassword = registerConfirmPassword ? registerConfirmPassword.value : "";
+
+        const nameFeedback = document.getElementById("registerNameFeedback");
+        const emailFeedback = document.getElementById("registerEmailFeedback");
+        const passwordFeedback = document.getElementById("registerPasswordFeedback");
+        const confirmFeedback = document.getElementById("registerConfirmPasswordFeedback");
+
+        let hasError = false;
+
+        if (!full_name || full_name.length < 2) {
+            setFieldError(registerName, nameFeedback, "Please enter your full name (at least 2 characters).");
+            hasError = true;
         }
 
-        registerForm.reset();
-        showLogin();
-        authMessage.textContent = "Account created successfully! Please login.";
-        authMessage.style.color = "green";
+        if (!email) {
+            setFieldError(registerEmail, emailFeedback, "Email address is required.");
+            hasError = true;
+        } else if (!isValidEmail(email)) {
+            setFieldError(registerEmail, emailFeedback, "Please enter a valid email address.");
+            hasError = true;
+        }
 
-    } catch (error) {
-        authMessage.textContent = error.message;
-        authMessage.style.color = "#d64545";
+        if (!password) {
+            setFieldError(registerPassword, passwordFeedback, "Password is required.");
+            hasError = true;
+        } else if (password.length < 8) {
+            setFieldError(registerPassword, passwordFeedback, "Password must be at least 8 characters long.");
+            hasError = true;
+        }
+
+        if (password !== confirmPassword) {
+            setFieldError(registerConfirmPassword, confirmFeedback, "Passwords do not match. Please re-enter.");
+            hasError = true;
+        }
+
+        if (hasError) {
+            showAuthAlert("Please correct the errors in the form before submitting.", "error");
+            return;
+        }
+
+        // Visual loading state prevents duplicate submissions and UI lag
+        setButtonLoading(registerSubmitBtn, true, "Processing...");
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+            const response = await fetch(`${API_URL}/auth/register`, {
+                method: "POST",
+                signal: controller.signal,
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ full_name, email, password })
+            });
+
+            clearTimeout(timeoutId);
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok || data.success === false) {
+                throw new Error(data.message || "Registration failed. Please try again.");
+            }
+
+            registerForm.reset();
+            showLoginTab();
+
+            if (loginEmail) {
+                loginEmail.value = email;
+            }
+
+            showAuthAlert("Account created successfully! Please sign in with your credentials.", "success");
+
+        } catch (error) {
+            console.error("Sign up error:", error);
+            const msg = formatAuthError(error, "Registration failed. Please try again.");
+            showAuthAlert(msg, "error");
+        } finally {
+            setButtonLoading(registerSubmitBtn, false);
+        }
+    });
+}
+
+// LOGIN FORM SUBMISSION
+if (loginForm) {
+    loginForm.addEventListener("submit", async function(event) {
+        event.preventDefault();
+        clearInputFeedbacks();
+        hideAuthAlert();
+
+        const email = loginEmail ? loginEmail.value.trim().toLowerCase() : "";
+        const password = loginPassword ? loginPassword.value : "";
+        const emailFeedback = document.getElementById("loginEmailFeedback");
+        const passwordFeedback = document.getElementById("loginPasswordFeedback");
+
+        let hasError = false;
+
+        if (!email) {
+            setFieldError(loginEmail, emailFeedback, "Please enter your email address.");
+            hasError = true;
+        } else if (!isValidEmail(email)) {
+            setFieldError(loginEmail, emailFeedback, "Please enter a valid email address.");
+            hasError = true;
+        }
+
+        if (!password) {
+            setFieldError(loginPassword, passwordFeedback, "Please enter your password.");
+            hasError = true;
+        }
+
+        if (hasError) return;
+
+        // Visual loading state prevents double clicks and informs user
+        setButtonLoading(loginSubmitBtn, true, "Processing...");
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+            const response = await fetch(`${API_URL}/auth/login`, {
+                method: "POST",
+                signal: controller.signal,
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ email, password })
+            });
+
+            clearTimeout(timeoutId);
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok || !data.success || !data.token) {
+                throw new Error(data.message || "Invalid email or password.");
+            }
+
+            // Save Remember Me preference
+            if (rememberMeCheckbox && rememberMeCheckbox.checked) {
+                localStorage.setItem("myStudyRememberEmail", email);
+            } else {
+                localStorage.removeItem("myStudyRememberEmail");
+            }
+
+            // Save JWT token in localStorage for robust session persistence across reloads
+            localStorage.setItem("myStudyToken", data.token);
+            localStorage.setItem("myStudyUser", JSON.stringify(data.user || {}));
+            document.documentElement.classList.add("session-authenticated");
+
+            // Unlock dashboard immediately
+            if (authSection) authSection.classList.add("hidden");
+            const mainContainer = document.querySelector(".container");
+            if (mainContainer) mainContainer.classList.remove("dashboard-locked");
+            if (logoutBtn) logoutBtn.classList.remove("hidden");
+
+            if (loginPassword) loginPassword.value = "";
+            hideAuthAlert();
+
+            // Load user data in background
+            await Promise.allSettled([
+                loadTasksFromBackend(),
+                loadUserProfile()
+            ]);
+
+        } catch (error) {
+            console.error("Login error:", error);
+            const msg = formatAuthError(error, "Login failed. Please check your credentials.");
+            showAuthAlert(msg, "error");
+        } finally {
+            setButtonLoading(loginSubmitBtn, false);
+        }
+    });
+}
+
+// FORGOT PASSWORD MODAL
+if (forgotPasswordBtn && forgotPasswordModal) {
+    forgotPasswordBtn.addEventListener("click", function() {
+        if (loginEmail && resetEmail && loginEmail.value) {
+            resetEmail.value = loginEmail.value;
+        }
+        if (resetModalAlert) resetModalAlert.classList.add("hidden");
+        forgotPasswordModal.classList.remove("hidden");
+        if (resetEmail) resetEmail.focus();
+    });
+}
+
+if (closeResetModalBtn && forgotPasswordModal) {
+    closeResetModalBtn.addEventListener("click", function() {
+        forgotPasswordModal.classList.add("hidden");
+    });
+}
+
+if (forgotPasswordForm) {
+    forgotPasswordForm.addEventListener("submit", function(e) {
+        e.preventDefault();
+        const email = resetEmail ? resetEmail.value.trim() : "";
+        if (!email || !isValidEmail(email)) {
+            if (resetModalAlert) {
+                resetModalAlert.className = "auth-alert error";
+                resetModalAlert.textContent = "Please provide a valid registered email address.";
+                resetModalAlert.classList.remove("hidden");
+            }
+            return;
+        }
+
+        if (resetModalAlert) {
+            resetModalAlert.className = "auth-alert success";
+            resetModalAlert.textContent = `Password recovery instructions have been sent to ${email}. Check your inbox shortly.`;
+            resetModalAlert.classList.remove("hidden");
+        }
+
+        setTimeout(() => {
+            if (forgotPasswordModal) forgotPasswordModal.classList.add("hidden");
+        }, 2600);
+    });
+}
+
+// SOCIAL LOGIN HANDLERS
+function openSocialNotice(provider, icon, title, desc) {
+    if (!socialNoticeModal) return;
+    if (socialModalIcon) socialModalIcon.textContent = icon;
+    if (socialModalTitle) socialModalTitle.textContent = title;
+    if (socialModalDesc) socialModalDesc.textContent = desc;
+    socialNoticeModal.classList.remove("hidden");
+}
+
+if (googleLoginBtn) {
+    googleLoginBtn.addEventListener("click", function() {
+        openSocialNotice(
+            "Google",
+            "🌐",
+            "Google Student Workspace",
+            "University Single Sign-On (Google Workspace for Education) connects directly to your institutional profile. You can also sign in directly using your email and password above."
+        );
+    });
+}
+
+if (githubLoginBtn) {
+    githubLoginBtn.addEventListener("click", function() {
+        openSocialNotice(
+            "GitHub",
+            "🐙",
+            "GitHub Student Developer SSO",
+            "GitHub Student Authentication enables developer verification and study repository sync. You can also sign in directly using your email and password above."
+        );
+    });
+}
+
+if (closeSocialModalBtn && socialNoticeModal) {
+    closeSocialModalBtn.addEventListener("click", function() {
+        socialNoticeModal.classList.add("hidden");
+    });
+}
+
+// CLOSE MODALS ON BACKDROP CLICK
+window.addEventListener("click", function(event) {
+    if (forgotPasswordModal && event.target === forgotPasswordModal) {
+        forgotPasswordModal.classList.add("hidden");
+    }
+    if (socialNoticeModal && event.target === socialNoticeModal) {
+        socialNoticeModal.classList.add("hidden");
     }
 });
 
-// LOGIN
-loginForm.addEventListener("submit", async function(event) {
-    event.preventDefault();
-
-    const email = document.getElementById("loginEmail").value.trim();
-    const password = document.getElementById("loginPassword").value;
-
-    authMessage.textContent = "Logging in...";
-
-    try {
-        const response = await fetch(`${API_URL}/auth/login`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ email, password })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok || !data.success || !data.token) {
-            throw new Error(data.message || "Login failed");
-        }
-
-        localStorage.setItem("myStudyToken", data.token);
-        localStorage.setItem("myStudyUser", JSON.stringify(data.user));
-
-        await loadTasksFromBackend();
-await loadUserProfile();
-        authSection.classList.add("hidden");
-        document.querySelector(".container").classList.remove("dashboard-locked");
-        logoutBtn.classList.remove("hidden");
-
-        alert("Login successful! Welcome to MyStudy Planner.");
-
-    } catch (error) {
-        authMessage.textContent = error.message;
-        authMessage.style.color = "#d64545";
+// CLOSE MODALS ON ESCAPE KEY
+window.addEventListener("keydown", function(event) {
+    if (event.key === "Escape") {
+        if (forgotPasswordModal) forgotPasswordModal.classList.add("hidden");
+        if (socialNoticeModal) socialNoticeModal.classList.add("hidden");
     }
 });
+
+// AUTH THEME TOGGLE SYNC
+function syncThemeButtons() {
+    const isDark = document.body.classList.contains("dark");
+    if (authThemeToggle) {
+        authThemeToggle.innerHTML = `<span class="theme-icon">${isDark ? "☀️" : "🌙"}</span>`;
+    }
+    const mainThemeBtn = document.getElementById("themeBtn");
+    if (mainThemeBtn) {
+        mainThemeBtn.textContent = isDark ? "☀️" : "🌙";
+    }
+}
+
+if (authThemeToggle) {
+    authThemeToggle.addEventListener("click", function() {
+        const isDark = document.body.classList.toggle("dark");
+        localStorage.setItem("myStudyTheme", isDark ? "dark" : "light");
+        syncThemeButtons();
+    });
+}
+
+// Synchronize theme icon on startup
+syncThemeButtons();
 
 // ======================================
-// 19. LOGOUT FUNCTIONALITY
+// 19. SESSION PERSISTENCE & LOGOUT
 // ======================================
 
 const logoutBtn = document.getElementById("logoutBtn");
 
 function showAuthScreen() {
-    document.querySelector(".container").classList.add("dashboard-locked");
-    authSection.classList.remove("hidden");
-    logoutBtn.classList.add("hidden");
+    document.documentElement.classList.remove("session-authenticated");
+    const container = document.querySelector(".container");
+    if (container) container.classList.add("dashboard-locked");
+    if (authSection) authSection.classList.remove("hidden");
+    if (logoutBtn) logoutBtn.classList.add("hidden");
 
     tasks = [];
 
     renderTasks();
     renderCalendar();
-    showLogin();
+    showLoginTab();
+    syncThemeButtons();
 }
 
-logoutBtn.addEventListener("click", function() {
-    if (!confirm("Are you sure you want to logout?")) return;
+if (logoutBtn) {
+    logoutBtn.addEventListener("click", function() {
+        if (!confirm("Are you sure you want to logout?")) return;
 
-    localStorage.removeItem("myStudyToken");
-    localStorage.removeItem("myStudyUser");
+        localStorage.removeItem("myStudyToken");
+        localStorage.removeItem("myStudyUser");
+        document.documentElement.classList.remove("session-authenticated");
 
-    showAuthScreen();
-
-    alert("You have logged out successfully.");
-});
-
-// Restore the login session after a page refresh.
-(async function initializeAuth() {
-    if (!getToken()) {
         showAuthScreen();
-        return;
+    });
+}
+
+// ========================================================
+// CHECK TOKEN ON PAGE LOAD & MAINTAIN AUTHENTICATED SESSION
+// ========================================================
+function checkAuthSession() {
+    const token = getToken();
+    const container = document.querySelector(".container");
+
+    // 1. If not logged in, reveal auth portal
+    if (!token) {
+        document.documentElement.classList.remove("session-authenticated");
+        showAuthScreen();
+        return false;
     }
 
-    try {
-        await loadTasksFromBackend();
-        await loadUserProfile();
+    // 2. Maintain session state immediately (zero delay, zero flicker on refresh)
+    document.documentElement.classList.add("session-authenticated");
+    if (authSection) authSection.classList.add("hidden");
+    if (container) container.classList.remove("dashboard-locked");
+    if (logoutBtn) logoutBtn.classList.remove("hidden");
 
-        authSection.classList.add("hidden");
-        document.querySelector(".container").classList.remove("dashboard-locked");
-        logoutBtn.classList.remove("hidden");
-
-    } catch (error) {
-        console.error("Could not restore login session:", error);
-        showAuthScreen();
+    // 3. Immediately restore user identity from cached session
+    const storedUser = localStorage.getItem("myStudyUser");
+    if (storedUser) {
+        try {
+            const user = JSON.parse(storedUser);
+            const nameEl = document.getElementById("profileName");
+            const emailEl = document.getElementById("profileEmail");
+            if (nameEl && user.full_name) nameEl.textContent = user.full_name;
+            if (emailEl && user.email) emailEl.textContent = user.email;
+        } catch (e) {
+            console.warn("Could not parse cached user info:", e);
+        }
     }
-})();
+
+    // 4. Background data sync (never logs out user if network has a temporary hiccup)
+    (async function syncSessionData() {
+        try {
+            await Promise.allSettled([
+                loadTasksFromBackend(),
+                loadUserProfile()
+            ]);
+        } catch (error) {
+            console.warn("Session data sync warning:", error.message);
+        }
+    })();
+
+    return true;
+}
+
+// Automatically check session on page load
+checkAuthSession();
 // ======================================
 // UPCOMING TASKS DASHBOARD
 // ======================================

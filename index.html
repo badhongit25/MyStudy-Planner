@@ -6,6 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MyStudy Planner</title>
     <link rel="stylesheet" href="style.css">
+    <script>
+        // Instant session persistence check: prevents flash of login screen on page refresh
+        (function() {
+            try {
+                if (localStorage.getItem("myStudyToken")) {
+                    document.documentElement.classList.add("session-authenticated");
+                }
+            } catch(e) {}
+        })();
+    </script>
 </head>
 <body>
 
@@ -31,52 +41,314 @@
 
     <!-- AUTHENTICATION SECTION -->
     <section id="authSection" class="auth-section">
-        <div class="auth-card">
-            <div class="auth-icon">📚</div>
-            <h2 id="authTitle">Welcome Back!</h2>
-            <p id="authSubtitle">Login to continue your study journey.</p>
+        <!-- Ambient decorative glows -->
+        <div class="auth-decor auth-decor-1" aria-hidden="true"></div>
+        <div class="auth-decor auth-decor-2" aria-hidden="true"></div>
 
-            <!-- LOGIN FORM -->
-            <form id="loginForm">
-                <label for="loginEmail">Email Address</label>
-                <input type="email" id="loginEmail"
-                       placeholder="Enter your email" required>
+        <div class="auth-card-wrapper">
+            <!-- Theme Switcher for Auth screen -->
+            <button type="button" id="authThemeToggle" class="auth-theme-btn" aria-label="Toggle Dark and Light Mode" title="Toggle Theme">
+                <span class="theme-icon">🌙</span>
+            </button>
 
-                <label for="loginPassword">Password</label>
-                <input type="password" id="loginPassword"
-                       placeholder="Enter your password" required>
+            <div class="auth-card neumorphic-card">
+                <!-- STUDY PLANNER BRANDING -->
+                <div class="auth-brand">
+                    <div class="auth-brand-badge" aria-hidden="true">
+                        <svg class="brand-cap-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+                            <path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5"/>
+                        </svg>
+                    </div>
+                    <div class="auth-brand-text">
+                        <span class="auth-app-badge">STUDY PLANNER</span>
+                        <h1 class="auth-app-title">MyStudy<span>.</span></h1>
+                    </div>
+                </div>
 
-                <button type="submit" class="add-btn auth-submit">
-                    Login
-                </button>
-            </form>
+                <!-- LOGIN AND SIGN UP TABS -->
+                <div class="auth-tabs" role="tablist" aria-label="Authentication Options">
+                    <button type="button" id="tabLogin" class="auth-tab active" role="tab" aria-selected="true" aria-controls="loginFormWrapper">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                            <polyline points="10 17 15 12 10 7"/>
+                            <line x1="15" y1="12" x2="3" y2="12"/>
+                        </svg>
+                        <span>Login</span>
+                    </button>
+                    <button type="button" id="tabRegister" class="auth-tab" role="tab" aria-selected="false" aria-controls="registerFormWrapper">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="8.5" cy="7" r="4"/>
+                            <line x1="20" y1="8" x2="20" y2="14"/>
+                            <line x1="23" y1="11" x2="17" y2="11"/>
+                        </svg>
+                        <span>Sign Up</span>
+                    </button>
+                </div>
 
-            <!-- REGISTER FORM -->
-            <form id="registerForm" class="hidden">
-                <label for="registerName">Full Name</label>
-                <input type="text" id="registerName"
-                       placeholder="Enter your full name" required>
+                <!-- HEADING & SUBTITLE -->
+                <div class="auth-headings">
+                    <h2 id="authTitle" class="auth-title">Welcome Back</h2>
+                    <p id="authSubtitle" class="auth-subtitle">Plan your studies, achieve your goals.</p>
+                </div>
 
-                <label for="registerEmail">Email Address</label>
-                <input type="email" id="registerEmail"
-                       placeholder="Enter your email" required>
+                <!-- ALERT MESSAGE -->
+                <div id="authAlert" class="auth-alert hidden" role="alert">
+                    <span class="auth-alert-icon" id="authAlertIcon" aria-hidden="true">ℹ️</span>
+                    <span class="auth-alert-text" id="authAlertText"></span>
+                    <button type="button" id="authAlertClose" class="auth-alert-close" aria-label="Dismiss">&times;</button>
+                </div>
 
-                <label for="registerPassword">Password</label>
-                <input type="password" id="registerPassword"
-                       placeholder="Minimum 8 characters"
-                       minlength="8" required>
+                <!-- FORM SLIDER -->
+                <div class="auth-forms-slider">
+                    <!-- LOGIN FORM -->
+                    <div id="loginFormWrapper" class="auth-form-wrapper active-form" role="tabpanel" aria-labelledby="tabLogin">
+                        <form id="loginForm" class="auth-form" novalidate>
+                            <!-- Email -->
+                            <div class="form-group">
+                                <label for="loginEmail" class="form-label">Email Address</label>
+                                <div class="neu-input-wrapper">
+                                    <span class="input-icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                                            <polyline points="22,6 12,13 2,6"/>
+                                        </svg>
+                                    </span>
+                                    <input type="email" id="loginEmail" class="neu-input" placeholder="student@university.edu" autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+                                </div>
+                                <span class="input-feedback" id="loginEmailFeedback"></span>
+                            </div>
 
-                <button type="submit" class="add-btn auth-submit">
-                    Create Account
-                </button>
-            </form>
+                            <!-- Password -->
+                            <div class="form-group">
+                                <label for="loginPassword" class="form-label">Password</label>
+                                <div class="neu-input-wrapper">
+                                    <span class="input-icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                                        </svg>
+                                    </span>
+                                    <input type="password" id="loginPassword" class="neu-input" placeholder="Enter your password" autocomplete="current-password" required>
+                                    <button type="button" class="password-toggle-btn" aria-label="Toggle password visibility" data-target="loginPassword">
+                                        <svg class="eye-open" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                            <circle cx="12" cy="12" r="3"/>
+                                        </svg>
+                                        <svg class="eye-closed hidden" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                                            <line x1="1" y1="1" x2="23" y2="23"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <span class="input-feedback" id="loginPasswordFeedback"></span>
+                            </div>
 
-            <p id="authMessage" class="auth-message"></p>
+                            <!-- Remember Me & Forgot Password -->
+                            <div class="auth-extra-row">
+                                <label class="neu-checkbox-label">
+                                    <input type="checkbox" id="rememberMeCheckbox" class="neu-checkbox">
+                                    <span class="neu-checkbox-custom" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                                            <polyline points="20 6 9 17 4 12"/>
+                                        </svg>
+                                    </span>
+                                    <span class="checkbox-text">Remember Me</span>
+                                </label>
+                                <button type="button" id="forgotPasswordBtn" class="link-btn">Forgot Password?</button>
+                            </div>
 
-            <p class="auth-switch" id="authSwitch">
-                Don't have an account?
-                <button type="button" id="showRegister">Register</button>
-            </p>
+                            <!-- Submit Button -->
+                            <button type="submit" id="loginSubmitBtn" class="neu-btn neu-btn-primary">
+                                <span class="btn-spinner hidden" aria-hidden="true"></span>
+                                <span class="btn-text">Sign In</span>
+                                <svg class="btn-icon-arrow" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <line x1="5" y1="12" x2="19" y2="12"/>
+                                    <polyline points="12 5 19 12 12 19"/>
+                                </svg>
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- SIGN UP FORM -->
+                    <div id="registerFormWrapper" class="auth-form-wrapper" role="tabpanel" aria-labelledby="tabRegister">
+                        <form id="registerForm" class="auth-form" novalidate>
+                            <!-- Full Name -->
+                            <div class="form-group">
+                                <label for="registerName" class="form-label">Full Name</label>
+                                <div class="neu-input-wrapper">
+                                    <span class="input-icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                            <circle cx="12" cy="7" r="4"/>
+                                        </svg>
+                                    </span>
+                                    <input type="text" id="registerName" class="neu-input" placeholder="e.g. Alex Johnson" autocomplete="name" required>
+                                </div>
+                                <span class="input-feedback" id="registerNameFeedback"></span>
+                            </div>
+
+                            <!-- Email Address -->
+                            <div class="form-group">
+                                <label for="registerEmail" class="form-label">Email Address</label>
+                                <div class="neu-input-wrapper">
+                                    <span class="input-icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                                            <polyline points="22,6 12,13 2,6"/>
+                                        </svg>
+                                    </span>
+                                    <input type="email" id="registerEmail" class="neu-input" placeholder="student@university.edu" autocomplete="email" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+                                </div>
+                                <span class="input-feedback" id="registerEmailFeedback"></span>
+                            </div>
+
+                            <!-- Password -->
+                            <div class="form-group">
+                                <label for="registerPassword" class="form-label">Password</label>
+                                <div class="neu-input-wrapper">
+                                    <span class="input-icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                                        </svg>
+                                    </span>
+                                    <input type="password" id="registerPassword" class="neu-input" placeholder="Minimum 8 characters" minlength="8" autocomplete="new-password" required>
+                                    <button type="button" class="password-toggle-btn" aria-label="Toggle password visibility" data-target="registerPassword">
+                                        <svg class="eye-open" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                            <circle cx="12" cy="12" r="3"/>
+                                        </svg>
+                                        <svg class="eye-closed hidden" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                                            <line x1="1" y1="1" x2="23" y2="23"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <span class="input-hint">Must be at least 8 characters long</span>
+                                <span class="input-feedback" id="registerPasswordFeedback"></span>
+                            </div>
+
+                            <!-- Confirm Password -->
+                            <div class="form-group">
+                                <label for="registerConfirmPassword" class="form-label">Confirm Password</label>
+                                <div class="neu-input-wrapper">
+                                    <span class="input-icon" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                                        </svg>
+                                    </span>
+                                    <input type="password" id="registerConfirmPassword" class="neu-input" placeholder="Re-enter your password" autocomplete="new-password" required>
+                                    <button type="button" class="password-toggle-btn" aria-label="Toggle password visibility" data-target="registerConfirmPassword">
+                                        <svg class="eye-open" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                            <circle cx="12" cy="12" r="3"/>
+                                        </svg>
+                                        <svg class="eye-closed hidden" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                                            <line x1="1" y1="1" x2="23" y2="23"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <span class="input-feedback" id="registerConfirmPasswordFeedback"></span>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <button type="submit" id="registerSubmitBtn" class="neu-btn neu-btn-primary">
+                                <span class="btn-spinner hidden" aria-hidden="true"></span>
+                                <span class="btn-text">Create Account</span>
+                                <svg class="btn-icon-arrow" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <line x1="5" y1="12" x2="19" y2="12"/>
+                                    <polyline points="12 5 19 12 12 19"/>
+                                </svg>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- SOCIAL LOGIN DIVIDER -->
+                <div class="neu-divider">
+                    <span class="divider-line" aria-hidden="true"></span>
+                    <span class="divider-pill">OR</span>
+                    <span class="divider-line" aria-hidden="true"></span>
+                </div>
+
+                <!-- SOCIAL LOGIN BUTTONS -->
+                <div class="social-login-grid">
+                    <button type="button" class="neu-btn neu-btn-social" id="googleLoginBtn">
+                        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.15z"/>
+                            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.24v3.15C3.26 21.4 7.34 24 12 24z"/>
+                            <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.24C.45 8.15 0 9.92 0 12s.45 3.85 1.24 5.42l4.04-3.15z"/>
+                            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.6 1.24 6.58l4.04 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                        </svg>
+                        <span>Google</span>
+                    </button>
+
+                    <button type="button" class="neu-btn neu-btn-social" id="githubLoginBtn">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+                        </svg>
+                        <span>GitHub</span>
+                    </button>
+                </div>
+
+                <!-- FOOTER SWITCH PROMPT -->
+                <div class="auth-card-footer">
+                    <p id="authSwitchPrompt" class="auth-switch-text">
+                        Don't have an account?
+                        <button type="button" id="authSwitchBtn" class="link-btn-strong">Create one now</button>
+                    </p>
+                </div>
+            </div>
+
+            <!-- FORGOT PASSWORD MODAL -->
+            <div id="forgotPasswordModal" class="neu-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+                <div class="neu-modal-card">
+                    <div class="modal-header">
+                        <div class="modal-icon" aria-hidden="true">🔐</div>
+                        <h3 id="modalTitle">Reset Your Password</h3>
+                        <p class="modal-desc">Enter your registered email address and we'll send you recovery instructions.</p>
+                    </div>
+                    <form id="forgotPasswordForm" novalidate>
+                        <div class="form-group">
+                            <label for="resetEmail" class="form-label">Email Address</label>
+                            <div class="neu-input-wrapper">
+                                <span class="input-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                                        <polyline points="22,6 12,13 2,6"/>
+                                    </svg>
+                                </span>
+                                <input type="email" id="resetEmail" class="neu-input" placeholder="student@university.edu" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+                            </div>
+                        </div>
+                        <div id="resetModalAlert" class="auth-alert hidden" role="alert"></div>
+                        <div class="modal-actions">
+                            <button type="button" id="closeResetModalBtn" class="neu-btn neu-btn-secondary">Cancel</button>
+                            <button type="submit" id="sendResetBtn" class="neu-btn neu-btn-primary">
+                                <span>Send Link</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- SOCIAL SSO NOTICE MODAL -->
+            <div id="socialNoticeModal" class="neu-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="socialModalTitle">
+                <div class="neu-modal-card">
+                    <div class="modal-header">
+                        <div class="modal-icon" id="socialModalIcon" aria-hidden="true">🎓</div>
+                        <h3 id="socialModalTitle">Student Single Sign-On</h3>
+                        <p class="modal-desc" id="socialModalDesc">Academic SSO connects directly with your institutional account or developer profile for instant access.</p>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" id="closeSocialModalBtn" class="neu-btn neu-btn-primary">Continue with Demo</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </section>
 

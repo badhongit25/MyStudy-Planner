@@ -1,0 +1,19 @@
+{
+  "name": "mystudy-planner",
+  "version": "1.0.0",
+  "description": "MyStudy Planner - Full Stack Study Planner Web Application",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "server": "node server.js",
+    "background": "cscript //nologo start-server-background.vbs"
+  },
+  "keywords": [
+    "study-planner",
+    "nodejs",
+    "express",
+    "postgresql"
+  ],
+  "author": "",
+  "license": "ISC"
+}

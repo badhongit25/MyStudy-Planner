@@ -3,6 +3,10 @@ const pool = require("../config/db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
+const getJwtSecret = () => {
+    return process.env.JWT_SECRET || "myStudyPlanner_Secret_2026_ChangeThisToARandomLongSecret";
+};
+
 // =========================
 // STUDENT REGISTRATION
 // =========================
@@ -17,6 +21,16 @@ const register = async (req, res) => {
             });
         }
 
+        const cleanName = full_name.trim();
+        const normalizedEmail = email.trim().toLowerCase();
+
+        if (cleanName.length < 2) {
+            return res.status(400).json({
+                success: false,
+                message: "Name must be at least 2 characters long"
+            });
+        }
+
         if (password.length < 8) {
             return res.status(400).json({
                 success: false,
@@ -24,15 +38,16 @@ const register = async (req, res) => {
             });
         }
 
+        // Case-insensitive email check across all devices
         const existingUser = await pool.query(
-            "SELECT id FROM users WHERE email = $1",
-            [email]
+            "SELECT id FROM users WHERE LOWER(email) = LOWER($1)",
+            [normalizedEmail]
         );
 
         if (existingUser.rows.length > 0) {
             return res.status(409).json({
                 success: false,
-                message: "Email already registered"
+                message: "Email already registered. Please log in."
             });
         }
 
@@ -42,13 +57,27 @@ const register = async (req, res) => {
             `INSERT INTO users (full_name, email, password_hash)
              VALUES ($1, $2, $3)
              RETURNING id, full_name, email, created_at`,
-            [full_name, email, passwordHash]
+            [cleanName, normalizedEmail, passwordHash]
+        );
+
+        const newUser = result.rows[0];
+
+        // Generate JWT token so account is immediately authenticated if needed
+        const token = jwt.sign(
+            { id: newUser.id },
+            getJwtSecret(),
+            { expiresIn: "30d" }
         );
 
         return res.status(201).json({
             success: true,
             message: "Registration successful!",
-            user: result.rows[0]
+            token,
+            user: {
+                id: newUser.id,
+                full_name: newUser.full_name,
+                email: newUser.email
+            }
         });
 
     } catch (error) {
@@ -56,7 +85,7 @@ const register = async (req, res) => {
 
         return res.status(500).json({
             success: false,
-            message: "Server error"
+            message: error.message || "Database connection error during registration"
         });
     }
 };
@@ -76,9 +105,12 @@ const login = async (req, res) => {
             });
         }
 
+        const normalizedEmail = email.trim().toLowerCase();
+
+        // Case-insensitive lookup prevents cross-device login failure (e.g. mobile capitalization)
         const result = await pool.query(
-            "SELECT * FROM users WHERE email = $1",
-            [email]
+            "SELECT * FROM users WHERE LOWER(email) = LOWER($1)",
+            [normalizedEmail]
         );
 
         if (result.rows.length === 0) {
@@ -102,14 +134,11 @@ const login = async (req, res) => {
             });
         }
 
-        if (!process.env.JWT_SECRET) {
-            throw new Error("JWT_SECRET is missing in .env");
-        }
-
+        // Long-lived 30-day token keeps session persistently logged in
         const token = jwt.sign(
             { id: user.id },
-            process.env.JWT_SECRET,
-            { expiresIn: "7d" }
+            getJwtSecret(),
+            { expiresIn: "30d" }
         );
 
         return res.status(200).json({
@@ -128,14 +157,14 @@ const login = async (req, res) => {
 
         return res.status(500).json({
             success: false,
-            message: "Server error"
+            message: error.message || "Server or database error during login"
         });
     }
 };
 
 
 // =========================
-// GET STUDENT PROFILE
+// GET STUDENT PROFILE (VERIFY TOKEN)
 // =========================
 const getProfile = async (req, res) => {
     try {
@@ -163,13 +192,12 @@ const getProfile = async (req, res) => {
 
         return res.status(500).json({
             success: false,
-            message: "Server error"
+            message: "Server error retrieving profile"
         });
     }
 };
 
 
-// IMPORTANT: Export only once, at the bottom.
 module.exports = {
     register,
     login,
